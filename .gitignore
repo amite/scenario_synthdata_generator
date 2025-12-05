@@ -1,0 +1,62 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# data
+data/
+
+# logs
+logs/
+
+# notebooks
+*.ipynb
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python-specific files
+*.pyc
+*.pyo
+*.pyd
+*.pyi
+*.pyd
+*.pyw
+*.pyz
+*.egg
+*.egg-info
+*.egg-info/
+*.egg-info/*.egg-info
+*.egg-info/PKG-INFO
+*.egg-info/SOURCES.txt
+*.egg-info/dependency_links.txt
+*.egg-info/top_level.txt
+*.egg-info/zip-safe
+*.egg-info/requires.txt
+*.egg-info/entry_points.txt
+*.egg-info/not-zip-safe
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_packages.txt
+*.egg-info/namespace_p
