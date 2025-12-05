@@ -170,8 +170,82 @@ assert "large" in screen.preset_configs
 # Install pytest-cov if not already installed
 .venv/bin/python -m pip install pytest-cov
 
-# Run tests with coverage report
+# Run all tests with coverage report
+.venv/bin/python -m pytest tests/ --cov=./ --cov-report=html
+
+# Run specific tests with coverage
 .venv/bin/python -m pytest tests/unit/ --cov=./ --cov-report=html
+```
+
+### Generating and Checking Test Coverage
+
+#### **1. Generate Coverage Report**
+```bash
+# Generate HTML coverage report for all tests
+.venv/bin/python -m pytest tests/ --cov=./ --cov-report=html
+
+# Generate terminal coverage report (quick check)
+.venv/bin/python -m pytest tests/ --cov=./ --cov-report=term
+```
+
+#### **2. View Coverage Results**
+```bash
+# Open HTML coverage report in browser
+xdg-open htmlcov/index.html
+
+# View coverage summary in terminal
+.venv/bin/python -m pytest tests/ --cov=./ --cov-report=term
+```
+
+#### **3. Check Coverage for Specific Files**
+```bash
+# Check coverage for generate.py only
+.venv/bin/python -m pytest tests/ --cov=generate --cov-report=term
+
+# Check coverage for tui_app.py only
+.venv/bin/python -m pytest tests/ --cov=tui_app --cov-report=term
+```
+
+#### **4. Set Coverage Thresholds**
+```bash
+# Fail if coverage below 80%
+.venv/bin/python -m pytest tests/ --cov=./ --cov-fail-under=80
+
+# Fail if coverage below 90% for critical files
+.venv/bin/python -m pytest tests/ --cov=generate --cov-fail-under=90
+```
+
+#### **5. Analyze Coverage Report**
+```bash
+# The HTML report shows:
+# - Overall coverage percentage
+# - Line-by-line coverage with color coding
+# - Green: Covered lines
+# - Red: Uncovered lines
+# - Yellow: Partially covered lines
+
+# Focus on:
+# - Core functionality (generate.py, tui_app.py)
+# - Edge cases and error handling
+# - Integration points between components
+```
+
+#### **6. Improve Coverage**
+```bash
+# Identify uncovered areas
+.venv/bin/python -m pytest tests/ --cov=./ --cov-report=term-missing
+
+# Add tests for uncovered functions
+# Focus on edge cases, error conditions, and rare scenarios
+```
+
+#### **7. Continuous Coverage Monitoring**
+```bash
+# Add to CI/CD pipeline
+.venv/bin/python -m pytest tests/ --cov=./ --cov-fail-under=80 --cov-report=xml
+
+# Generate badge for README
+# .venv/bin/python -m pytest tests/ --cov=./ --cov-report=badge
 ```
 
 ### Running Tests in Different Environments
