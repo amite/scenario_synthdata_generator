@@ -18,3 +18,5 @@ python generate.py viral_moment --tables=orders,support_tickets,cart_abandonment
 
 # Custom scenario
 python generate.py custom --config=my_scenario.json --output-dir=./custom_output
+
+remember to use the .venv before running python
