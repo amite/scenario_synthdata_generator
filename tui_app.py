@@ -27,6 +27,25 @@ except ImportError:
     print("Error: generate.py not found. Make sure it's in the same directory.")
     sys.exit(1)
 
+# Category mapping function for string to numeric conversion
+def category_mapping(category: str) -> int:
+    """Map category names to numeric values
+
+    Args:
+        category: Category name as string
+
+    Returns:
+        Numeric category ID (1-5), defaults to 1 (electronics) for unknown categories
+    """
+    category_map = {
+        "electronics": 1,
+        "clothing": 2,
+        "home": 3,
+        "beauty": 4,
+        "books": 5
+    }
+    return category_map.get(category.lower(), 1)
+
 
 class LoadingScreen(Screen):
     """Initial loading screen"""
@@ -506,14 +525,7 @@ class CustomParametersScreen(Screen):
                 category = self.query_one("#input-category", Input).value
                 special_params["discount"] = discount
                 # Convert category to a numeric representation to avoid type conflicts
-                category_mapping = {
-                    "electronics": 1,
-                    "clothing": 2,
-                    "home": 3,
-                    "beauty": 4,
-                    "books": 5
-                }
-                special_params["category"] = category_mapping.get(category.lower(), 1)  # Use numeric representation
+                special_params["category"] = category_mapping(category.lower())  # Use numeric representation
             
             # Create updated config
             updated_config = ScenarioConfig(
