@@ -76,8 +76,9 @@ class SyntheticDataGenerator:
         """Generate customer data with realistic demographics"""
         cohorts = ["gen_z", "millennial", "gen_x", "boomer"]
         cohort_weights = [0.28, 0.35, 0.25, 0.12]  # Gen Z growing
-        
+
         if scenario_config.special_params and "gen_z_growth" in scenario_config.special_params:
+            print(f"  📈 Applying Gen Z growth factor: +{scenario_config.special_params['gen_z_growth']}%")
             cohort_weights[0] += scenario_config.special_params["gen_z_growth"] / 100
             # Normalize
             total = sum(cohort_weights)
@@ -281,11 +282,13 @@ class SyntheticDataGenerator:
             
             # Special scenario adjustments
             if scenario_config.name == "payment_outage" and 1 <= hour <= 3:
+                print(f"  ⚠️  Payment outage detected - reducing orders by 80% for hour {hour}")
                 orders_this_hour = int(orders_this_hour * 0.2)  # 80% drop during outage
-                
+    
             elif scenario_config.name == "viral_moment":
                 if hour <= 6:
                     viral_curve = math.exp(hour) / math.exp(6)  # Exponential growth
+                    print(f"  🚀 Viral growth phase - applying {viral_curve:.2f}x multiplier for hour {hour}")
                     orders_this_hour = int(orders_this_hour * viral_curve)
                     
             for _ in range(orders_this_hour):
@@ -431,10 +434,13 @@ class SyntheticDataGenerator:
         
         # Special scenario adjustments
         if scenario_config.name == "returns_wave":
+            print("  📞 Returns wave scenario - increasing support tickets by 2.5x")
             expected_tickets = int(expected_tickets * 2.5)  # Return-heavy support load
         elif scenario_config.name == "payment_outage":
+            print("  💳 Payment outage scenario - increasing support tickets by 3.0x")
             expected_tickets = int(expected_tickets * 3.0)  # Payment issues spike
         elif scenario_config.name == "viral_moment":
+            print("  📈 Viral moment scenario - increasing support tickets by 2.0x")
             expected_tickets = int(expected_tickets * 2.0)  # "Restock" inquiries
         
         tickets = []
@@ -607,8 +613,10 @@ class SyntheticDataGenerator:
         
         # Special scenario adjustments
         if scenario_config.name == "payment_outage":
+            print("  🛒 Payment outage scenario - increasing cart abandonment by 3.5x")
             abandonment_count = int(abandonment_count * 3.5)  # Massive spike during outage
         elif scenario_config.name == "flash_sale":
+            print("  ⏰ Flash sale scenario - reducing cart abandonment by 60% (FOMO effect)")
             abandonment_count = int(abandonment_count * 0.4)  # FOMO reduces abandonment
         
         abandonments = []
@@ -841,8 +849,9 @@ class SyntheticDataGenerator:
     def save_data(self, tables: List[str], scenario_name: str):
         """Save generated data to files"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         print("💾 Saving files:")
+        print(f"  📁 Output directory: {self.output_dir}")
         saved_files = []
         
         for table in tables:
@@ -862,6 +871,7 @@ class SyntheticDataGenerator:
             else:
                 print(f"  ❌ {table}: Not generated")
         
+        print(f"  ✅ All files saved successfully!")
         return saved_files
     
     def print_summary(self, scenario_config: ScenarioConfig, saved_files: List[str]):
@@ -1113,54 +1123,82 @@ def main():
     generator.print_header(scenario_config.name.replace("_", " ").title())
     
     print("Generating data...")
+    print("📋 Generation Plan:")
+    print(f"  - Scenario: {scenario_config.name.replace('_', ' ').title()}")
+    print(f"  - Duration: {scenario_config.duration}")
+    print(f"  - Intensity: {scenario_config.intensity_multiplier}x")
+    print(f"  - Tables: {', '.join(tables_to_generate)}")
+    print()
     
     # Generate data step by step
     try:
         # Core entities first
         if "customers" in tables_to_generate:
+            print("👥 Generating customer data...")
             customer_count = scenario_config.special_params.get("customers", 15000) if scenario_config.special_params else 15000
             generator.data["customers"] = generator.generate_customers(customer_count, scenario_config)
-        
+            print(f"  ✅ Generated {len(generator.data['customers'])} customers")
+
         if "suppliers" in tables_to_generate:
+            print("🏭 Generating supplier data...")
             generator.data["suppliers"] = generator.generate_suppliers()
-        
+            print(f"  ✅ Generated {len(generator.data['suppliers'])} suppliers")
+
         if "products" in tables_to_generate:
+            print("📦 Generating product catalog...")
             suppliers_df = generator.data.get("suppliers", generator.generate_suppliers())
             generator.data["products"] = generator.generate_products(suppliers_df, scenario_config)
-        
+            print(f"  ✅ Generated {len(generator.data['products'])} products")
+
         if "campaigns" in tables_to_generate:
+            print("🎯 Generating marketing campaigns...")
             generator.data["campaigns"] = generator.generate_campaigns(scenario_config)
-        
+            if not generator.data["campaigns"].empty:
+                print(f"  ✅ Generated {len(generator.data['campaigns'])} campaigns")
+            else:
+                print("  ✅ No campaigns generated for this scenario")
+
         # Dependent entities
         if "orders" in tables_to_generate:
+            print("🛒 Generating order data...")
             customers_df = generator.data.get("customers", generator.generate_customers(15000, scenario_config))
             products_df = generator.data.get("products", generator.generate_products(
                 generator.data.get("suppliers", generator.generate_suppliers()), scenario_config
             ))
             campaigns_df = generator.data.get("campaigns", generator.generate_campaigns(scenario_config))
-            
+
             generator.data["orders"] = generator.generate_orders(
                 customers_df, products_df, campaigns_df, scenario_config
             )
-        
+            print(f"  ✅ Generated {len(generator.data['orders'])} orders")
+
         if "support_tickets" in tables_to_generate:
+            print("💬 Generating support tickets...")
             customers_df = generator.data.get("customers")
             orders_df = generator.data.get("orders")
             if customers_df is not None and orders_df is not None:
                 generator.data["support_tickets"] = generator.generate_support_tickets(
                     customers_df, orders_df, scenario_config
                 )
-        
+                print(f"  ✅ Generated {len(generator.data['support_tickets'])} support tickets")
+            else:
+                print("  ⚠️  Skipping support tickets - missing customer/order data")
+
         if "cart_abandonment" in tables_to_generate:
+            print("🛑 Generating cart abandonment data...")
             customers_df = generator.data.get("customers")
-            products_df = generator.data.get("products") 
+            products_df = generator.data.get("products")
             orders_df = generator.data.get("orders")
             if customers_df is not None and products_df is not None and orders_df is not None:
                 generator.data["cart_abandonment"] = generator.generate_cart_abandonment(
                     customers_df, products_df, orders_df, scenario_config
                 )
-        
+                print(f"  ✅ Generated {len(generator.data['cart_abandonment'])} abandoned carts")
+            else:
+                print("  ⚠️  Skipping cart abandonment - missing required data")
+
         if "returns" in tables_to_generate:
+            print("🔄 Generating returns data...")
             orders_df = generator.data.get("orders")
             customers_df = generator.data.get("customers")
             products_df = generator.data.get("products")
@@ -1168,9 +1206,14 @@ def main():
                 generator.data["returns"] = generator.generate_returns(
                     orders_df, customers_df, products_df, scenario_config
                 )
-        
+                print(f"  ✅ Generated {len(generator.data['returns'])} returns")
+            else:
+                print("  ⚠️  Skipping returns - missing required data")
+
         if "system_metrics" in tables_to_generate:
+            print("📊 Generating system metrics...")
             generator.data["system_metrics"] = generator.generate_system_metrics(scenario_config)
+            print(f"  ✅ Generated {len(generator.data['system_metrics'])} metric records")
         
         # Save generated data
         saved_files = generator.save_data(tables_to_generate, args.scenario)
