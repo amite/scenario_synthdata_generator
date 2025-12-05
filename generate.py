@@ -302,171 +302,238 @@ class SyntheticDataGenerator:
     
     def generate_orders(self, customers_df: pd.DataFrame, products_df: pd.DataFrame,
                        campaigns_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
-        """Generate order data with realistic patterns"""
+        """Generate order data with realistic patterns using vectorized operations"""
         start_time = time.time()
         duration_hours = self._parse_duration_hours(scenario_config.duration)
         base_orders_per_hour = scenario_config.special_params.get("orders_per_hour", 800) if scenario_config.special_params else 800
         expected_orders = int(duration_hours * base_orders_per_hour * scenario_config.intensity_multiplier)
         logger.info(f"Starting order generation: ~{expected_orders} orders expected over {duration_hours:.1f} hours")
-        
+
+        # Phase 1 Optimization: Vectorized order generation
+        return self._generate_orders_vectorized(customers_df, products_df, campaigns_df, scenario_config)
+
+    def _generate_orders_vectorized(self, customers_df: pd.DataFrame, products_df: pd.DataFrame,
+                                   campaigns_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
+        """Vectorized order generation for Phase 1 optimization"""
+        start_time = time.time()
         duration_hours = self._parse_duration_hours(scenario_config.duration)
         base_orders_per_hour = scenario_config.special_params.get("orders_per_hour", 800) if scenario_config.special_params else 800
-        
+
+        # Calculate total orders needed
+        total_orders = 0
+        hour_multipliers = []
+        hour_ranges = []
+
+        # Pre-calculate hourly multipliers (Phase 1: Basic Caching)
+        for hour in range(int(duration_hours)):
+            hour_multiplier = self._get_hourly_multiplier(hour, scenario_config)
+
+            # Apply scenario-specific adjustments
+            if scenario_config.name == "payment_outage" and 1 <= hour <= 3:
+                hour_multiplier *= 0.2  # 80% drop during outage
+                print(f"  ⚠️  Payment outage detected - reducing orders by 80% for hour {hour}")
+            elif scenario_config.name == "viral_moment" and hour <= 6:
+                viral_curve = math.exp(hour) / math.exp(6)  # Exponential growth
+                hour_multiplier *= viral_curve
+                print(f"  🚀 Viral growth phase - applying {viral_curve:.2f}x multiplier for hour {hour}")
+
+            orders_this_hour = int(base_orders_per_hour * scenario_config.intensity_multiplier * hour_multiplier)
+            total_orders += orders_this_hour
+            hour_multipliers.append(hour_multiplier)
+            hour_ranges.append((hour, orders_this_hour))
+
+        logger.info(f"Vectorized order generation: {total_orders} total orders across {len(hour_ranges)} hours")
+
+        # Phase 1: Batch Processing - Process in chunks of 10,000 orders
+        BATCH_SIZE = 10000
         orders = []
         order_items = []
-        
-        # Time-based order generation
+
+        # Pre-compute customer and product selection probabilities
+        customer_ids = customers_df['customer_id'].values
+        customer_cohorts = customers_df['cohort'].values
+        product_ids = products_df['product_id'].values
+        product_prices = products_df['price'].values
+        product_skus = products_df['sku'].values
+
+        # Campaign data
+        campaign_id = None
+        campaign_discount = 0.0
+        if not campaigns_df.empty:
+            campaign = campaigns_df.iloc[0]
+            campaign_id = str(campaign["campaign_id"])
+            campaign_discount = float(campaign["discount_percent"])
+            if campaign["target_categories"]:
+                campaign_products = products_df[products_df["category"].isin(campaign["target_categories"])]
+                if not campaign_products.empty:
+                    product_ids = campaign_products['product_id'].values
+                    product_prices = campaign_products['price'].values
+                    product_skus = campaign_products['sku'].values
+
+        # Generate orders in batches
+        current_order_idx = 0
         current_time = self.timestamp_start
-        hour_delta = timedelta(hours=1)
-        
-        for hour in range(int(duration_hours)):
-            # Apply intensity multiplier and time-of-day patterns
-            hour_multiplier = self._get_hourly_multiplier(hour, scenario_config)
-            orders_this_hour = int(base_orders_per_hour * scenario_config.intensity_multiplier * hour_multiplier)
-            
-            # Special scenario adjustments
-            if scenario_config.name == "payment_outage" and 1 <= hour <= 3:
-                print(f"  ⚠️  Payment outage detected - reducing orders by 80% for hour {hour}")
-                orders_this_hour = int(orders_this_hour * 0.2)  # 80% drop during outage
-    
-            elif scenario_config.name == "viral_moment":
-                if hour <= 6:
-                    viral_curve = math.exp(hour) / math.exp(6)  # Exponential growth
-                    print(f"  🚀 Viral growth phase - applying {viral_curve:.2f}x multiplier for hour {hour}")
-                    orders_this_hour = int(orders_this_hour * viral_curve)
-                    
-            for _ in range(orders_this_hour):
-                order_time = current_time + timedelta(minutes=random.randint(0, 59))
-                
-                # Select customer based on scenario
-                customer = customers_df.sample(1).iloc[0]
-                
-                # Channel selection based on customer cohort
-                if customer["cohort"] == "gen_z":
-                    channel = np.random.choice(["mobile_app", "mobile_web", "web"], p=[0.5, 0.3, 0.2])
-                elif customer["cohort"] == "boomer":
-                    channel = np.random.choice(["web", "mobile_web"], p=[0.7, 0.3])
-                else:
-                    channel = np.random.choice(["web", "mobile_web", "mobile_app"], p=[0.4, 0.35, 0.25])
-                
-                # Payment type based on cohort
-                if customer["cohort"] == "gen_z":
-                    payment_type = np.random.choice(["card", "bnpl", "upi"], p=[0.4, 0.4, 0.2])
-                else:
-                    payment_type = np.random.choice(["card", "upi", "cod"], p=[0.6, 0.25, 0.15])
-                
-                # Payment status - failures during outages
-                if scenario_config.name == "payment_outage" and 1 <= hour <= 3:
-                    payment_status = np.random.choice(["failed", "success"], p=[0.7, 0.3])
-                    payment_failure_reason = "gateway_down" if payment_status == "failed" else None
-                else:
-                    payment_status = np.random.choice(["success", "failed"], p=[0.95, 0.05])
-                    # Fix: Use random.choices() instead of np.random.choice() to handle None values
-                    payment_failure_reason = random.choices(["insufficient_funds", "expired_card", None], weights=[0.1, 0.1, 0.8], k=1)[0]
-                
-                # Product selection
-                if not campaigns_df.empty:
-                    campaign = campaigns_df.iloc[0]
-                    if campaign["target_categories"]:
-                        category_products = products_df[products_df["category"].isin(campaign["target_categories"])]
-                        if not category_products.empty:
-                            product = category_products.sample(1).iloc[0]
-                        else:
-                            product = products_df.sample(1).iloc[0]
-                    else:
-                        product = products_df.sample(1).iloc[0]
-                    campaign_id = campaign["campaign_id"]
-                else:
-                    product = products_df.sample(1).iloc[0]
-                    campaign_id = None
-                
-                # Calculate pricing
-                quantity = np.random.choice([1, 2, 3, 4], p=[0.6, 0.25, 0.1, 0.05])
-                unit_price = product["price"]
-                
-                # Apply campaign discount
-                discount_per_unit = 0.0
-                if campaign_id and not campaigns_df.empty:
-                    campaign = campaigns_df[campaigns_df["campaign_id"] == campaign_id].iloc[0]
-                    discount_per_unit = unit_price * campaign["discount_percent"]
-                    
-                subtotal = quantity * unit_price
-                total_discount = quantity * discount_per_unit
-                tax = (subtotal - total_discount) * 0.08  # 8% tax
-                shipping_cost = 5.99 if subtotal < 50 else 0  # Free shipping over $50
-                total_amount = subtotal - total_discount + tax + shipping_cost
-                
-                # Delivery estimates
-                expected_delivery = order_time + timedelta(days=random.randint(1, 3))
-                
-                # SLA breach calculation (more likely during high intensity)
-                sla_breach_prob = 0.05 * scenario_config.intensity_multiplier
-                if random.random() < sla_breach_prob:
-                    delivery_delay_hours = random.randint(12, 72)
-                    actual_delivery = expected_delivery + timedelta(hours=delivery_delay_hours)
-                    is_sla_breach = True
-                else:
-                    delivery_delay_hours = 0
-                    actual_delivery = expected_delivery + timedelta(hours=random.randint(-6, 6))
-                    is_sla_breach = False
-                
-                # Order status progression
-                if payment_status == "failed":
-                    order_status = "cancelled"
-                    actual_delivery = None
-                else:
-                    statuses = ["delivered", "shipped", "processing", "cancelled"]
-                    order_status = np.random.choice(statuses, p=[0.85, 0.1, 0.03, 0.02])
-                    
-                    if order_status != "delivered":
-                        actual_delivery = None
-                        is_sla_breach = False
-                        delivery_delay_hours = 0
-                
-                order = {
-                    "order_id": str(uuid.uuid4()),
-                    "customer_id": customer["customer_id"],
-                    "campaign_id": campaign_id,
-                    "order_ts": order_time,
-                    "channel": channel,
-                    "session_id": str(uuid.uuid4()),
-                    "payment_type": payment_type,
-                    "payment_status": payment_status,
-                    "payment_failure_reason": payment_failure_reason,
-                    "order_status": order_status,
-                    "subtotal": round(subtotal, 2),
-                    "discount": round(total_discount, 2),
-                    "tax": round(tax, 2),
-                    "shipping_cost": shipping_cost,
-                    "total_amount": round(total_amount, 2),
-                    "warehouse_id": f"WH_{random.randint(1, 5):02d}",
-                    "expected_delivery_ts": expected_delivery,
-                    "actual_delivery_ts": actual_delivery,
-                    "is_sla_breach": is_sla_breach,
-                    "delivery_delay_hours": delivery_delay_hours
-                }
-                orders.append(order)
-                
-                # Create order items
-                order_item = {
-                    "order_item_id": str(uuid.uuid4()),
-                    "order_id": order["order_id"],
-                    "product_id": product["product_id"],
-                    "sku": product["sku"],
-                    "quantity": quantity,
-                    "unit_price": unit_price,
-                    "discount_per_unit": discount_per_unit,
-                    "total_price": round((unit_price - discount_per_unit) * quantity, 2)
-                }
-                order_items.append(order_item)
-                
-            current_time += hour_delta
-            
+
+        for hour, orders_this_hour in hour_ranges:
+            if orders_this_hour == 0:
+                current_time += timedelta(hours=1)
+                continue
+
+            # Process this hour's orders in batches
+            for batch_start in range(0, orders_this_hour, BATCH_SIZE):
+                batch_size = min(BATCH_SIZE, orders_this_hour - batch_start)
+
+                # Vectorized order generation for this batch
+                batch_orders, batch_order_items = self._generate_order_batch(
+                    batch_size, hour, current_time,
+                    customers_df, products_df, campaigns_df,
+                    scenario_config, campaign_id, campaign_discount
+                )
+
+                orders.extend(batch_orders)
+                order_items.extend(batch_order_items)
+                current_order_idx += batch_size
+
+            current_time += timedelta(hours=1)
+
         orders_df = pd.DataFrame(orders)
         self.data["order_items"] = pd.DataFrame(order_items)
         elapsed = time.time() - start_time
-        logger.info(f"Completed order generation: {len(orders_df)} orders in {elapsed:.2f} seconds")
+        logger.info(f"Completed vectorized order generation: {len(orders_df)} orders in {elapsed:.2f} seconds")
         return orders_df
+
+    def _generate_order_batch(self, batch_size: int, hour: int, current_time: datetime,
+                            customers_df: pd.DataFrame, products_df: pd.DataFrame,
+                            campaigns_df: pd.DataFrame, scenario_config: ScenarioConfig,
+                            campaign_id: Optional[str], campaign_discount: float) -> tuple:
+        """Generate a batch of orders using vectorized operations"""
+        # Vectorized customer selection
+        customer_indices = np.random.choice(len(customers_df), batch_size)
+        selected_customers = customers_df.iloc[customer_indices]
+
+        # Vectorized product selection
+        product_indices = np.random.choice(len(products_df), batch_size)
+        selected_products = products_df.iloc[product_indices]
+
+        # Vectorized quantities
+        quantities = np.random.choice([1, 2, 3, 4], batch_size, p=[0.6, 0.25, 0.1, 0.05])
+
+        # Vectorized order times (within the hour)
+        minutes_offset = np.random.randint(0, 60, batch_size)
+        order_times = [current_time + timedelta(minutes=int(m)) for m in minutes_offset]
+
+        # Vectorized channels based on customer cohorts
+        channels = []
+        for cohort in selected_customers['cohort']:
+            if cohort == "gen_z":
+                channels.append(np.random.choice(["mobile_app", "mobile_web", "web"], p=[0.5, 0.3, 0.2]))
+            elif cohort == "boomer":
+                channels.append(np.random.choice(["web", "mobile_web"], p=[0.7, 0.3]))
+            else:
+                channels.append(np.random.choice(["web", "mobile_web", "mobile_app"], p=[0.4, 0.35, 0.25]))
+
+        # Vectorized payment types
+        payment_types = []
+        for cohort in selected_customers['cohort']:
+            if cohort == "gen_z":
+                payment_types.append(np.random.choice(["card", "bnpl", "upi"], p=[0.4, 0.4, 0.2]))
+            else:
+                payment_types.append(np.random.choice(["card", "upi", "cod"], p=[0.6, 0.25, 0.15]))
+
+        # Vectorized payment status and failure reasons
+        payment_statuses = []
+        payment_failure_reasons = []
+        for i in range(batch_size):
+            if scenario_config.name == "payment_outage" and 1 <= hour <= 3:
+                status = np.random.choice(["failed", "success"], p=[0.7, 0.3])
+                reason = "gateway_down" if status == "failed" else None
+            else:
+                status = np.random.choice(["success", "failed"], p=[0.95, 0.05])
+                reason = random.choices(["insufficient_funds", "expired_card", None], weights=[0.1, 0.1, 0.8], k=1)[0]
+            payment_statuses.append(status)
+            payment_failure_reasons.append(reason)
+
+        # Vectorized pricing calculations
+        unit_prices = np.array(selected_products['price'].values.astype(float))
+        quantities_array = np.array(quantities.astype(float))
+        subtotals = quantities_array * unit_prices
+        if campaign_id is not None:
+            total_discounts = quantities_array * (unit_prices * float(campaign_discount))
+        else:
+            total_discounts = np.zeros(batch_size, dtype=float)
+        taxes = (subtotals - total_discounts) * 0.08
+        shipping_costs = np.where(subtotals < 50, 5.99, 0.0)
+        total_amounts = subtotals - total_discounts + taxes + shipping_costs
+
+        # Vectorized delivery estimates
+        delivery_days_offset = np.random.randint(1, 4, batch_size)
+        expected_deliveries = [order_times[i] + timedelta(days=int(d)) for i, d in enumerate(delivery_days_offset)]
+
+        # Vectorized SLA breach calculations
+        sla_breach_probs = 0.05 * scenario_config.intensity_multiplier
+        is_sla_breaches = np.random.random(batch_size) < sla_breach_probs
+        delivery_delay_hours = np.where(is_sla_breaches,
+                                      np.random.randint(12, 72, batch_size),
+                                      0)
+        actual_deliveries = []
+        for i in range(batch_size):
+            if is_sla_breaches[i]:
+                actual_deliveries.append(expected_deliveries[i] + timedelta(hours=int(delivery_delay_hours[i])))
+            else:
+                actual_deliveries.append(expected_deliveries[i] + timedelta(hours=np.random.randint(-6, 6)))
+
+        # Vectorized order statuses
+        order_statuses = []
+        for i in range(batch_size):
+            if payment_statuses[i] == "failed":
+                order_statuses.append("cancelled")
+            else:
+                status = np.random.choice(["delivered", "shipped", "processing", "cancelled"], p=[0.85, 0.1, 0.03, 0.02])
+                order_statuses.append(status)
+
+        # Create orders batch
+        orders = []
+        order_items = []
+        for i in range(batch_size):
+            order_id = str(uuid.uuid4())
+            order = {
+                "order_id": order_id,
+                "customer_id": str(selected_customers.iloc[i]["customer_id"]),
+                "campaign_id": campaign_id,
+                "order_ts": order_times[i],
+                "channel": channels[i],
+                "session_id": str(uuid.uuid4()),
+                "payment_type": payment_types[i],
+                "payment_status": payment_statuses[i],
+                "payment_failure_reason": payment_failure_reasons[i],
+                "order_status": order_statuses[i],
+                "subtotal": round(float(subtotals[i]), 2),
+                "discount": round(float(total_discounts[i]), 2),
+                "tax": round(float(taxes[i]), 2),
+                "shipping_cost": float(shipping_costs[i]),
+                "total_amount": round(float(total_amounts[i]), 2),
+                "warehouse_id": f"WH_{random.randint(1, 5):02d}",
+                "expected_delivery_ts": expected_deliveries[i],
+                "actual_delivery_ts": actual_deliveries[i] if order_statuses[i] == "delivered" else None,
+                "is_sla_breach": bool(is_sla_breaches[i]),
+                "delivery_delay_hours": int(delivery_delay_hours[i])
+            }
+            orders.append(order)
+
+            # Create order item
+            order_item = {
+                "order_item_id": str(uuid.uuid4()),
+                "order_id": order_id,
+                "product_id": selected_products.iloc[i]["product_id"],
+                "sku": selected_products.iloc[i]["sku"],
+                "quantity": quantities[i],
+                "unit_price": unit_prices[i],
+                "discount_per_unit": float(unit_prices[i]) * float(campaign_discount) if campaign_id else 0.0,
+                "total_price": round((unit_prices[i] - (float(unit_prices[i]) * float(campaign_discount))) * quantities_array[i], 2)
+            }
+            order_items.append(order_item)
+
+        return orders, order_items
     
     def generate_support_tickets(self, customers_df: pd.DataFrame, orders_df: pd.DataFrame,
                                 scenario_config: ScenarioConfig) -> pd.DataFrame:
