@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -19,12 +20,24 @@ import pandas as pd
 from faker import Faker
 from dataclasses import dataclass
 import warnings
+import logging
 warnings.filterwarnings('ignore')
 
 fake = Faker()
 Faker.seed(42)
 np.random.seed(42)
 random.seed(42)
+
+# Set up logging for observability
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('performance.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ScenarioConfig:
@@ -71,9 +84,16 @@ class SyntheticDataGenerator:
         print(f"📁 Output Directory: {self.output_dir}")
         print(f"💾 Output Format: {self.output_format.upper()}")
         print()
+
+        # Log start time
+        logger.info(f"Starting scenario: {scenario_name}")
+        logger.info(f"Output directory: {self.output_dir}")
+        self.start_time = time.time()
         
     def generate_customers(self, count: int, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate customer data with realistic demographics"""
+        start_time = time.time()
+        logger.info(f"Starting customer generation: {count} customers")
         cohorts = ["gen_z", "millennial", "gen_x", "boomer"]
         cohort_weights = [0.28, 0.35, 0.25, 0.12]  # Gen Z growing
 
@@ -124,10 +144,15 @@ class SyntheticDataGenerator:
             }
             customers.append(customer)
             
-        return pd.DataFrame(customers)
+        customers_df = pd.DataFrame(customers)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed customer generation: {len(customers_df)} customers in {elapsed:.2f} seconds")
+        return customers_df
     
     def generate_suppliers(self) -> pd.DataFrame:
         """Generate supplier data"""
+        start_time = time.time()
+        logger.info("Starting supplier generation")
         suppliers_data = [
             {"name": "China Main Electronics", "country": "China", "lead_time": 14, "reliability": 0.85, "primary": True},
             {"name": "India Textiles Co", "country": "India", "lead_time": 10, "reliability": 0.92, "primary": True},
@@ -151,10 +176,16 @@ class SyntheticDataGenerator:
             }
             suppliers.append(supplier)
             
-        return pd.DataFrame(suppliers)
+        suppliers_df = pd.DataFrame(suppliers)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed supplier generation: {len(suppliers_df)} suppliers in {elapsed:.2f} seconds")
+        return suppliers_df
     
     def generate_products(self, suppliers_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate product catalog"""
+        start_time = time.time()
+        product_count = scenario_config.special_params.get("product_count", 2500) if scenario_config.special_params else 2500
+        logger.info(f"Starting product generation: {product_count} products")
         categories = {
             "electronics": ["smartphones", "laptops", "headphones", "tablets", "smart_watches"],
             "clothing": ["shirts", "pants", "dresses", "shoes", "accessories"],
@@ -213,10 +244,15 @@ class SyntheticDataGenerator:
             }
             products.append(product)
             
-        return pd.DataFrame(products)
+        products_df = pd.DataFrame(products)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed product generation: {len(products_df)} products in {elapsed:.2f} seconds")
+        return products_df
     
     def generate_campaigns(self, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate marketing campaigns"""
+        start_time = time.time()
+        logger.info(f"Starting campaign generation for scenario: {scenario_config.name}")
         campaigns = []
         
         if scenario_config.name == "flash_sale":
@@ -259,11 +295,19 @@ class SyntheticDataGenerator:
             }
             campaigns.append(campaign)
             
-        return pd.DataFrame(campaigns) if campaigns else pd.DataFrame()
+        campaigns_df = pd.DataFrame(campaigns) if campaigns else pd.DataFrame()
+        elapsed = time.time() - start_time
+        logger.info(f"Completed campaign generation: {len(campaigns_df)} campaigns in {elapsed:.2f} seconds")
+        return campaigns_df
     
-    def generate_orders(self, customers_df: pd.DataFrame, products_df: pd.DataFrame, 
+    def generate_orders(self, customers_df: pd.DataFrame, products_df: pd.DataFrame,
                        campaigns_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate order data with realistic patterns"""
+        start_time = time.time()
+        duration_hours = self._parse_duration_hours(scenario_config.duration)
+        base_orders_per_hour = scenario_config.special_params.get("orders_per_hour", 800) if scenario_config.special_params else 800
+        expected_orders = int(duration_hours * base_orders_per_hour * scenario_config.intensity_multiplier)
+        logger.info(f"Starting order generation: ~{expected_orders} orders expected over {duration_hours:.1f} hours")
         
         duration_hours = self._parse_duration_hours(scenario_config.duration)
         base_orders_per_hour = scenario_config.special_params.get("orders_per_hour", 800) if scenario_config.special_params else 800
@@ -418,12 +462,19 @@ class SyntheticDataGenerator:
                 
             current_time += hour_delta
             
+        orders_df = pd.DataFrame(orders)
         self.data["order_items"] = pd.DataFrame(order_items)
-        return pd.DataFrame(orders)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed order generation: {len(orders_df)} orders in {elapsed:.2f} seconds")
+        return orders_df
     
     def generate_support_tickets(self, customers_df: pd.DataFrame, orders_df: pd.DataFrame,
                                 scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate support tickets with realistic correlations"""
+        start_time = time.time()
+        total_orders = len(orders_df)
+        expected_tickets = int(total_orders * 0.12 * scenario_config.intensity_multiplier * 0.85)
+        logger.info(f"Starting support ticket generation: ~{expected_tickets} tickets expected from {total_orders} orders")
         
         # Calculate expected ticket volume based on orders (correlation = 0.85)
         total_orders = len(orders_df)
@@ -521,7 +572,10 @@ class SyntheticDataGenerator:
             )
             tickets.append(ticket)
         
-        return pd.DataFrame(tickets)
+        tickets_df = pd.DataFrame(tickets)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed support ticket generation: {len(tickets_df)} tickets in {elapsed:.2f} seconds")
+        return tickets_df
     
     def _create_support_ticket(self, customer, order, channel, ticket_time, 
                               issue_category, severity, scenario_config) -> dict:
@@ -598,6 +652,10 @@ class SyntheticDataGenerator:
     def generate_cart_abandonment(self, customers_df: pd.DataFrame, products_df: pd.DataFrame,
                                  orders_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate cart abandonment data with negative correlation to orders"""
+        start_time = time.time()
+        total_orders = len(orders_df)
+        abandonment_count = int(total_orders * 0.25 * scenario_config.intensity_multiplier)
+        logger.info(f"Starting cart abandonment generation: ~{abandonment_count} abandonments expected")
         
         # Base abandonment rate
         base_abandonment_rate = 0.25  # 25% normal abandonment
@@ -669,11 +727,18 @@ class SyntheticDataGenerator:
             }
             abandonments.append(abandonment)
         
-        return pd.DataFrame(abandonments)
+        abandonments_df = pd.DataFrame(abandonments)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed cart abandonment generation: {len(abandonments_df)} abandonments in {elapsed:.2f} seconds")
+        return abandonments_df
     
     def generate_returns(self, orders_df: pd.DataFrame, customers_df: pd.DataFrame,
                         products_df: pd.DataFrame, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate returns data (especially for post-holiday scenarios)"""
+        start_time = time.time()
+        delivered_orders = orders_df[orders_df["order_status"] == "delivered"].copy()
+        returns_count = int(len(delivered_orders) * 0.08)
+        logger.info(f"Starting returns generation: ~{returns_count} returns expected from {len(delivered_orders)} delivered orders")
         
         if scenario_config.name != "returns_wave":
             # Normal return rate
@@ -754,10 +819,17 @@ class SyntheticDataGenerator:
                 }
                 returns.append(return_record)
         
-        return pd.DataFrame(returns)
+        returns_df = pd.DataFrame(returns)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed returns generation: {len(returns_df)} returns in {elapsed:.2f} seconds")
+        return returns_df
     
     def generate_system_metrics(self, scenario_config: ScenarioConfig) -> pd.DataFrame:
         """Generate system performance metrics"""
+        start_time = time.time()
+        duration_hours = int(self._parse_duration_hours(scenario_config.duration))
+        expected_metrics = duration_hours * 6  # 6 metrics per hour
+        logger.info(f"Starting system metrics generation: ~{expected_metrics} metrics expected over {duration_hours} hours")
         metrics = []
         duration_hours = int(self._parse_duration_hours(scenario_config.duration))
         
@@ -804,7 +876,10 @@ class SyntheticDataGenerator:
             
             current_time += timedelta(hours=1)
         
-        return pd.DataFrame(metrics)
+        metrics_df = pd.DataFrame(metrics)
+        elapsed = time.time() - start_time
+        logger.info(f"Completed system metrics generation: {len(metrics_df)} metrics in {elapsed:.2f} seconds")
+        return metrics_df
     
     def _get_hourly_multiplier(self, hour: int, scenario_config: ScenarioConfig) -> float:
         """Get time-of-day traffic multiplier"""
@@ -853,6 +928,9 @@ class SyntheticDataGenerator:
         print("💾 Saving files:")
         print(f"  📁 Output directory: {self.output_dir}")
         saved_files = []
+
+        start_time = time.time()
+        logger.info(f"Starting data save process for {len(tables)} tables")
         
         for table in tables:
             if table in self.data and not self.data[table].empty:
@@ -871,6 +949,8 @@ class SyntheticDataGenerator:
             else:
                 print(f"  ❌ {table}: Not generated")
         
+        elapsed = time.time() - start_time
+        logger.info(f"Completed data save process: {len(saved_files)} files saved in {elapsed:.2f} seconds")
         print(f"  ✅ All files saved successfully!")
         return saved_files
     
@@ -878,6 +958,11 @@ class SyntheticDataGenerator:
         """Print generation summary with key insights"""
         print()
         print("📈 Key Metrics & Correlations Applied:")
+
+        # Log overall performance
+        total_elapsed = time.time() - self.start_time
+        logger.info(f"Scenario completed: {scenario_config.name} in {total_elapsed:.2f} seconds")
+        logger.info(f"Total files generated: {len(saved_files)}")
         
         # Calculate actual correlations from generated data
         if "orders" in self.data and "support_tickets" in self.data:
@@ -1132,6 +1217,7 @@ def main():
     
     # Generate data step by step
     try:
+        logger.info("Starting data generation process")
         # Core entities first
         if "customers" in tables_to_generate:
             print("👥 Generating customer data...")
@@ -1220,6 +1306,11 @@ def main():
         
         # Print summary
         generator.print_summary(scenario_config, saved_files)
+
+        # Log final performance metrics
+        total_elapsed = time.time() - generator.start_time
+        logger.info(f"🎯 TOTAL EXECUTION TIME: {total_elapsed:.2f} seconds")
+        logger.info("Performance logging completed")
         
     except Exception as e:
         print(f"❌ Error during data generation: {e}")
