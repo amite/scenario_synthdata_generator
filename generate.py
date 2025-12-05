@@ -204,9 +204,20 @@ class SyntheticDataGenerator:
         
         products = []
         supplier_ids = suppliers_df["supplier_id"].tolist()
-        
+
+        # Category mapping for numeric to string conversion
+        category_mapping = {
+            1: "electronics",
+            2: "clothing",
+            3: "home",
+            4: "beauty",
+            5: "books"
+        }
+
         # Category distribution based on scenario
         focus_category = scenario_config.special_params.get("category", None) if scenario_config.special_params else None
+        if isinstance(focus_category, int):
+            focus_category = category_mapping.get(focus_category, "electronics")
         product_count = scenario_config.special_params.get("product_count", 2500) if scenario_config.special_params else 2500
         
         for i in range(product_count):
@@ -256,14 +267,28 @@ class SyntheticDataGenerator:
         campaigns = []
         
         if scenario_config.name == "flash_sale":
+            # Category mapping for numeric to string conversion
+            category_mapping = {
+                1: "electronics",
+                2: "clothing",
+                3: "home",
+                4: "beauty",
+                5: "books"
+            }
+
+            # Get category and convert to string if it's numeric
+            category_value = scenario_config.special_params.get("category", "electronics") if scenario_config.special_params else "electronics"
+            if isinstance(category_value, int):
+                category_value = category_mapping.get(category_value, "electronics")
+
             campaign = {
                 "campaign_id": str(uuid.uuid4()),
-                "name": f"Flash Sale {scenario_config.special_params.get('category', 'All') if scenario_config.special_params else 'All'} {scenario_config.special_params.get('discount', 50) if scenario_config.special_params else 50}% Off",
+                "name": f"Flash Sale {category_value} {scenario_config.special_params.get('discount', 50) if scenario_config.special_params else 50}% Off",
                 "campaign_type": "flash_sale",
                 "start_ts": self.timestamp_start,
                 "end_ts": self.timestamp_start + self._parse_duration(scenario_config.duration),
                 "discount_percent": (scenario_config.special_params.get("discount", 50) if scenario_config.special_params else 50) / 100,
-                "target_categories": [scenario_config.special_params.get("category", "electronics") if scenario_config.special_params else "electronics"],
+                "target_categories": [category_value],
                 "intensity_multiplier": scenario_config.intensity_multiplier
             }
             campaigns.append(campaign)
@@ -1074,7 +1099,7 @@ def create_scenario_configs():
             intensity_multiplier=8.5,
             special_params={
                 "discount": 70,
-                "category": "electronics",
+                "category": 1,  # electronics
                 "orders_per_hour": 1000
             }
         ),
@@ -1245,7 +1270,15 @@ def main():
     if args.category:
         if scenario_config.special_params is None:
             scenario_config.special_params = {}
-        scenario_config.special_params["category"] = args.category
+        # Category mapping for string to numeric conversion
+        category_mapping = {
+            "electronics": 1,
+            "clothing": 2,
+            "home": 3,
+            "beauty": 4,
+            "books": 5
+        }
+        scenario_config.special_params["category"] = category_mapping.get(args.category.lower(), 1)
     if args.customers:
         if scenario_config.special_params is None:
             scenario_config.special_params = {}
